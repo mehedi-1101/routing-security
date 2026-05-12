@@ -7,10 +7,8 @@ const AuthContext = createContext(null);
 export function AuthProvider({ children }) {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
+  const [csrfToken, setCsrfToken] = useState(null);
 
-  // Calls POST /login on the Express server.
-  // Returns { ok: true } or { ok: false, error: string }.
-  // credentials: 'include' tells the browser to send/receive cookies cross-origin.
   const login = async (email, password) => {
     const res = await fetch(`${API}/login`, {
       method: 'POST',
@@ -27,6 +25,13 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     setIsLoggedIn(true);
     setUser(data.email);
+
+    // Session cookie is now set. Fetch the CSRF token while we're here —
+    // the server ties it to this session, so we must be logged in first.
+    const tokenRes = await fetch(`${API}/csrf-token`, { credentials: 'include' });
+    const tokenData = await tokenRes.json();
+    setCsrfToken(tokenData.csrfToken);
+
     return { ok: true };
   };
 
@@ -34,9 +39,10 @@ export function AuthProvider({ children }) {
     await fetch(`${API}/logout`, { method: 'POST', credentials: 'include' });
     setIsLoggedIn(false);
     setUser(null);
+    setCsrfToken(null);
   };
 
-  const value = { isLoggedIn, user, login, logout };
+  const value = { isLoggedIn, user, csrfToken, login, logout };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
