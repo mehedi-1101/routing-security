@@ -1,12 +1,13 @@
 import { useAuth } from '../context/AuthContext';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 
 function DemoApp() {
   const { isLoggedIn, user, login, logout } = useAuth();
-  const navigate = useNavigate(); // useNavigate for programmatic navigation
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('password123');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [email, setEmail] = useState('admin@example.com');
+  const [password, setPassword] = useState('secret123');
   const [loginError, setLoginError] = useState('');
 
   const handleLogin = async () => {
@@ -15,7 +16,10 @@ function DemoApp() {
       setLoginError(result.error || 'Login failed');
     } else {
       setLoginError('');
-      navigate('/demo');
+      // If the user was redirected here from a protected page, send them back.
+      // location.state?.from is set by ProtectedRoute when it redirects.
+      const destination = location.state?.from || '/demo';
+      navigate(destination, { replace: true });
     }
   };
 
