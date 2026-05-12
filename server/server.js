@@ -71,10 +71,10 @@ app.get('/csrf-token', (req, res) => {
   res.json({ csrfToken });
 });
 
-// ── POST /transfer (demo endpoint to test CSRF protection) ────────────────────
-// A stand-in for any real state-changing action (transfer, delete, update).
-// Will be used in the XSS/CSRF demo page to show pass vs fail.
-app.post('/transfer', (req, res) => {
+// ── CSRF middleware ────────────────────────────────────────────────────────────
+// Reusable guard for any state-changing route. Checks that the request has a
+// valid session and a matching CSRF token in the X-CSRF-Token header.
+function validateCsrf(req, res, next) {
   const sessionId = parseCookies(req)['sessionId'];
   const session = sessions[sessionId];
 
@@ -87,6 +87,12 @@ app.post('/transfer', (req, res) => {
     return res.status(403).json({ error: 'Invalid or missing CSRF token' });
   }
 
+  req.session = session;
+  next();
+}
+
+// ── POST /transfer (demo endpoint to test CSRF protection) ────────────────────
+app.post('/transfer', validateCsrf, (req, res) => {
   res.json({ ok: true, message: `Transfer of $${req.body.amount} accepted.` });
 });
 
