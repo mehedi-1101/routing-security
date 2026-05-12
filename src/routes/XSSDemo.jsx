@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 
 function XSSDemo() {
   const [vulnerableInput, setVulnerableInput] = useState(
@@ -7,12 +8,8 @@ function XSSDemo() {
   const [safeInput, setSafeInput] = useState(
     '<b>Welcome back, Alex</b> <img src=x onerror="alert(\'XSS fired\')" />'
   );
+  const { csrfToken } = useAuth();
   const [securityLog, setSecurityLog] = useState([]);
-
-  const [cookieSessionEnabled, setCookieSessionEnabled] = useState(true);
-  const [sameSiteMode, setSameSiteMode] = useState('none');
-  const [csrfTokenOnForm, setCsrfTokenOnForm] = useState(false);
-  const [csrfTokenOnServer, setCsrfTokenOnServer] = useState('secure-123');
   const [requestResult, setRequestResult] = useState('No request yet');
 
   const appendLog = (line) => {
@@ -24,41 +21,35 @@ function XSSDemo() {
     setSafeInput(payload);
   };
 
-  const csrfProtectedTransfer = ({ crossSite, providedToken }) => {
-    const browserSendsCookie = cookieSessionEnabled && (sameSiteMode === 'none' || !crossSite);
-    const csrfTokenValid = providedToken && providedToken === csrfTokenOnServer;
-
-    if (!browserSendsCookie) {
-      return {
-        ok: false,
-        reason: 'Blocked: session cookie not sent (SameSite + cross-site request).',
-      };
-    }
-
-    if (!csrfTokenValid) {
-      return {
-        ok: false,
-        reason: 'Blocked: missing or invalid CSRF token.',
-      };
-    }
-
-    return {
-      ok: true,
-      reason: 'Success: transfer accepted (cookie + valid CSRF token).',
-    };
+  // Simulates a legitimate user action — includes the real CSRF token in the header.
+  const runLegitTransfer = async () => {
+    const res = await fetch('http://localhost:4000/transfer', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': csrfToken,
+      },
+      credentials: 'include',
+      body: JSON.stringify({ amount: 100 }),
+    });
+    const data = await res.json();
+    const msg = res.ok ? `✅ ${data.message}` : `❌ ${data.error}`;
+    setRequestResult(msg);
+    appendLog(`[user] POST /transfer -> ${msg}`);
   };
 
-  const runAttackSimulation = () => {
-    const result = csrfProtectedTransfer({ crossSite: true, providedToken: null });
-    setRequestResult(result.reason);
-    appendLog(`[attack] POST /transfer cross-site -> ${result.reason}`);
-  };
-
-  const runLegitTransfer = () => {
-    const providedToken = csrfTokenOnForm ? csrfTokenOnServer : null;
-    const result = csrfProtectedTransfer({ crossSite: false, providedToken });
-    setRequestResult(result.reason);
-    appendLog(`[user] POST /transfer same-site -> ${result.reason}`);
+  // Simulates an attacker — omits the CSRF token entirely.
+  const runAttackSimulation = async () => {
+    const res = await fetch('http://localhost:4000/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ amount: 100 }),
+    });
+    const data = await res.json();
+    const msg = res.ok ? `✅ ${data.message}` : `❌ ${data.error}`;
+    setRequestResult(msg);
+    appendLog(`[attack] POST /transfer (no token) -> ${msg}`);
   };
 
   return (
@@ -135,62 +126,25 @@ function XSSDemo() {
           Defenses: CSRF token validation and SameSite cookies.
         </p>
 
-        <div style={styles.twoCol}>
-          <div style={styles.csrfVuln}>
-            <h3 style={styles.subHeading}>Environment toggles</h3>
-            <label style={styles.checkboxLine}>
-              <input
-                type="checkbox"
-                checked={cookieSessionEnabled}
-                onChange={(e) => setCookieSessionEnabled(e.target.checked)}
-              />
-              Browser has session cookie
-            </label>
-            <label style={styles.label}>SameSite mode</label>
-            <select
-              value={sameSiteMode}
-              onChange={(e) => setSameSiteMode(e.target.value)}
-              style={styles.select}
-            >
-              <option value="none">None (least safe)</option>
-              <option value="lax">Lax</option>
-              <option value="strict">Strict</option>
-            </select>
+        <p style={styles.small}>
+          Must be logged in for these to work — the CSRF token is tied to your session.
+        </p>
+        <div style={styles.csrfFixed}>
+          <h3 style={styles.subHeading}>Request simulations</h3>
+          <button onClick={runAttackSimulation} style={styles.dangerButton}>
+            Simulate malicious request (no CSRF token)
+          </button>
+          <button onClick={runLegitTransfer} style={styles.safeButton}>
+            Simulate legitimate transfer (with CSRF token)
+          </button>
 
-            <label style={styles.checkboxLine}>
-              <input
-                type="checkbox"
-                checked={csrfTokenOnForm}
-                onChange={(e) => setCsrfTokenOnForm(e.target.checked)}
-              />
-              Legit form includes CSRF token
-            </label>
-
-            <label style={styles.label}>Server expected CSRF token</label>
-            <input
-              value={csrfTokenOnServer}
-              onChange={(e) => setCsrfTokenOnServer(e.target.value)}
-              style={styles.input}
-            />
+          <div style={styles.resultBox}>
+            <strong>Latest result:</strong> {requestResult}
           </div>
 
-          <div style={styles.csrfFixed}>
-            <h3 style={styles.subHeading}>Request simulations</h3>
-            <button onClick={runAttackSimulation} style={styles.dangerButton}>
-              Simulate malicious cross-site request
-            </button>
-            <button onClick={runLegitTransfer} style={styles.safeButton}>
-              Simulate legitimate user transfer
-            </button>
-
-            <div style={styles.resultBox}>
-              <strong>Latest result:</strong> {requestResult}
-            </div>
-
-            <p style={styles.small}>
-              Cross-site attack sends no trusted CSRF token. If server requires token, request is blocked.
-            </p>
-          </div>
+          <p style={styles.small}>
+            The attack omits the CSRF token — the server rejects it. The legit request includes it — accepted.
+          </p>
         </div>
 
         <div style={styles.logBox}>
